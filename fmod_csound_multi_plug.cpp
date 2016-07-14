@@ -27,34 +27,45 @@ using namespace std;
 
 
 extern "C" {
-	F_EXPORT FMOD_DSP_DESCRIPTION* F_CALL FMODGetDSPDescription();
-	//F_EXPORT FMOD_PLUGINLIST* F_CALL FMODGetPluginDescriptionList();
+	//F_EXPORT FMOD_DSP_DESCRIPTION* F_CALL FMODGetDSPDescription();
+	F_EXPORT FMOD_PLUGINLIST* F_CALL FMODGetPluginDescriptionList();
 }
 
 const float FMOD_CSOUND_PARAM_GAIN_MIN = -80.0f;
 const float FMOD_CSOUND_PARAM_GAIN_MAX = 10.0f;
 const float FMOD_CSOUND_PARAM_GAIN_DEFAULT = 0.0f;
 
-#include "csound.h"
+#include "Csound\Includes\csound\csound.h"
 
 
 //===========================================================
 // simple class for holding information about Csound instruments and channels
 //===========================================================
-enum Range
+class CsoundInstrument
 {
-	MIN = 0,
-	MAX,
-	VALUE
-};
+public:
+	CsoundInstrument() {};
 
-struct CsoundChannel
-{
-	float range[3];
-	string name, text, label, caption, type;
-};
+	struct CsoundChannel
+	{
+		float range[3];
+		string name, text, label, caption, type;
+	};
 
-vector<CsoundChannel> csoundChannels;
+	enum Range
+	{
+		MIN = 0,
+		MAX,
+		VALUE
+	};
+
+
+
+	string csdFilename = "";
+	CsoundChannel channels[1000];
+	int pluginIndex = 0;
+	int numberOfChannels = 0;
+};
 
 //============================================================
 enum FMOD_CSOUND_FORMAT
@@ -128,7 +139,7 @@ FMOD_DSP_DESCRIPTION FMOD_Csound_Desc =
 //===========================================================
 // utility function to get name of library that was loaded
 //===========================================================
-string GetCsdFilename()
+string GetPath(bool withFileName)
 {
 	char   DllPath[MAX_PATH] = { 0 };
 #ifdef WIN32
@@ -137,12 +148,15 @@ string GetCsdFilename()
 	size_t lastindex = fileName.find_last_of(".");
 	string fullFilename = fileName.substr(0, lastindex);
 	fullFilename.append(".csd");
-	return fullFilename;
-#endif
+	if (withFileName)
+		return fullFilename;
 
+#endif
+	size_t found;
+	found = fullFilename.find_last_of("/\\");
+	return fullFilename.substr(0, found);
 }
 
-string csdFilename;
 //to remove leading and trailing spaces
 string Trim(string s)
 {
@@ -163,7 +177,7 @@ vector<string> GetCsdFiles()
 	int             i = 0;
 	size_t    indx = 0;
 	char csd_path[1024];
-	sprintf(csd_path, "%s", GetCsdFilename().c_str());
+	sprintf(csd_path, "%s", GetPath(false).c_str());
 	char *src = NULL;
 
 
@@ -216,9 +230,9 @@ vector<string> GetCsdFiles()
 // simple function for loading information to CsoundChannel vector
 //================================================================
 
-static vector<CsoundChannel> GetCsoundChannelVector(string csdFile)
+static vector<CsoundInstrument::CsoundChannel> GetCsoundChannelVector(string csdFile)
 {
-	vector<CsoundChannel> csndChannels;
+	vector<CsoundInstrument::CsoundChannel> csndChannels;
 
 	std::ifstream input(csdFile);
 
@@ -244,12 +258,8 @@ static vector<CsoundChannel> GetCsoundChannelVector(string csdFile)
 			control.find("groupbox") != std::string::npos ||
 			control.find("form") != std::string::npos)
 		{
-			CsoundChannel csndChannel;
+			CsoundInstrument::CsoundChannel csndChannel;
 			csndChannel.type = control;
-			//init range
-			csndChannel.range[Range::MIN] = 0;
-			csndChannel.range[Range::MAX] = 1;
-			csndChannel.range[Range::VALUE] = 0;
 
 			if (line.find("caption(") != std::string::npos)
 			{
@@ -293,7 +303,7 @@ static vector<CsoundChannel> GetCsoundChannelVector(string csdFile)
 			{
 				string value = line.substr(line.find("value(") + 6);
 				value = value.substr(0, value.find(")"));
-				csndChannel.range[Range::VALUE] = value.length() > 0 ? stof(value) : 0;
+				csndChannel.range[CsoundInstrument::VALUE] = value.length() > 0 ? stof(value) : 0;
 			}
 
 			csndChannels.push_back(csndChannel);
@@ -303,64 +313,152 @@ static vector<CsoundChannel> GetCsoundChannelVector(string csdFile)
 	return csndChannels;
 }
 
+vector<FMOD_DSP_DESCRIPTION> pluginDescriptors;
+
 
 extern "C"
 {
-	F_EXPORT FMOD_DSP_DESCRIPTION* F_CALL FMODGetDSPDescription()
+	F_EXPORT FMOD_PLUGINLIST* F_CALL FMODGetPluginDescriptionList()
 	{
-		csdFilename = GetCsdFilename();
-		csoundChannels = GetCsoundChannelVector(csdFilename);
-		int params = csoundChannels.size();
+
+		int params = 2;
+
+		vector<CsoundInstrument::CsoundChannel> csoundChannels;
+
+		vector<string> csdFiles = GetCsdFiles();
+		int numPlugins = csdFiles.size();
+		FMOD_PLUGINLIST* Csound_Plugin_List = new FMOD_PLUGINLIST[numPlugins + 1];
 
 
-		CsoundChannel csndChannel;
-	
-		//find name of plugin and then remove from parameter list...
-		for (int i = 0; i < params; i++)
+		for (int plugs = 0; plugs < numPlugins; plugs++)
 		{
-			if (csoundChannels[i].type == "form")
+			csoundChannels = GetCsoundChannelVector(csdFiles[plugs]);
+			int params = csoundChannels.size();
+			pluginDescriptors.push_back(FMOD_Csound_Desc);
+			//find name of plugin and then remove from parameter list...
+			for (int i = 0; i < params; i++)
 			{
-				sprintf(FMOD_Csound_Desc.name, "%s", csoundChannels[i].caption.c_str());
-				csoundChannels.erase(csoundChannels.begin() + i);
-				params = csoundChannels.size();
+				if (csoundChannels[i].type == "form")
+				{
+					string test = csoundChannels[i].caption;
+					sprintf(pluginDescriptors[pluginDescriptors.size() - 1].name, "%s", csoundChannels[i].caption.c_str());
+				}
 			}
+
+			
 		}
 
-		params = csoundChannels.size();
-		FMOD_Csound_Desc.numparameters = params;
-		
-		for (int i = 0; i < params; i++)
+		int paramCount = 0;
+		for (int plugs = 0; plugs < numPlugins; plugs++)
 		{
-				FMOD_Csound_dspparam[i] = &csoundParameters[i];
+			CsoundInstrument* csdInstrument = new CsoundInstrument();
+			csoundChannels = GetCsoundChannelVector(csdFiles[plugs]);
+
+			//find name of plugin and then remove form widget from parameter list...
+			for (int i = 0; i < params; i++)
+			{
+				if (csoundChannels[i].type == "form")
+				{
+					csoundChannels.erase(csoundChannels.begin() + i);
+					params = csoundChannels.size();
+				}
+			}
+
+			for (int i = 0; i < csoundChannels.size(); i++)
+			{
+				csdInstrument->channels[i] = csoundChannels[i];
+			}
+
+			csdInstrument->numberOfChannels = csoundChannels.size();
+			csdInstrument->csdFilename = csdFiles[plugs];
+			csdInstrument->pluginIndex = plugs;
+
+			int params = csoundChannels.size();
+
+			params = csoundChannels.size();
+			pluginDescriptors[plugs].numparameters = params;
+			pluginDescriptors[plugs].paramdesc = &FMOD_Csound_dspparam[paramCount];
+
+			for (int i = 0; i < params; i++)
+			{
+				FMOD_Csound_dspparam[paramCount] = &csoundParameters[paramCount];
 				if (csoundChannels[i].type == "button" || csoundChannels[i].type == "checkbox")
 				{
 					FMOD_DSP_INIT_PARAMDESC_INT(
-						csoundParameters[i],
+						csoundParameters[paramCount],
 						csoundChannels[i].name.c_str(),
 						"",
 						csoundChannels[i].text.c_str(),
 						0,
 						1,
-						csoundChannels[i].range[Range::VALUE],
+						csoundChannels[i].range[CsoundInstrument::VALUE],
 						0,
 						0);
 				}
 				else
 				{
 					FMOD_DSP_INIT_PARAMDESC_FLOAT(
-						csoundParameters[i],
+						csoundParameters[paramCount],
 						csoundChannels[i].name.c_str(),
 						"",
 						csoundChannels[i].text.c_str(),
-						csoundChannels[i].range[Range::MIN],
-						csoundChannels[i].range[Range::MAX],
-						csoundChannels[i].range[Range::VALUE]);
+						csoundChannels[i].range[CsoundInstrument::MIN],
+						csoundChannels[i].range[CsoundInstrument::MAX],
+						csoundChannels[i].range[CsoundInstrument::VALUE]);
 				}
-				//FMOD_DSP_INIT_PARAMDESC_FLOAT(csoundParameters[i], csoundChannels[i].name.c_str(), "", csoundChannels[i].text.c_str(), csoundChannels[i].range[Range::MIN], csoundChannels[i].range[Range::MAX], csoundChannels[i].range[Range::VALUE]);
+				paramCount++;
+			}
+
+			Csound_Plugin_List[plugs].description = &pluginDescriptors[plugs];
+			Csound_Plugin_List[plugs].type = FMOD_PLUGINTYPE_DSP;
+
+			pluginDescriptors[plugs].userdata = static_cast<void*>(csdInstrument);
+
+
 		}
 
-		return &FMOD_Csound_Desc;
+		Csound_Plugin_List[numPlugins].type = FMOD_PLUGINTYPE_MAX;
+		Csound_Plugin_List[numPlugins].description = NULL;
+
+
+		return Csound_Plugin_List;
 	}
+
+	//F_EXPORT FMOD_DSP_DESCRIPTION* F_CALL FMODGetDSPDescription()
+	//{
+	//	csoundChannels = GetCsoundChannelVector("C:\\Users\\rory\\sourcecode\\FMOD Studio API Windows\\api\\lowlevel\\examples\\vs2012\\_builds\\fmod_csound\\Debug\\x64\\hoarmins2.csd");
+	//	int params = csoundChannels.size();
+
+
+	//	CsoundChannel csndChannel;
+	//
+	//	//find name of plugin and then remove from parameter list...
+	//	for (int i = 0; i < params; i++)
+	//	{
+	//		if (csoundChannels[i].type == "form")
+	//		{
+	//			sprintf(FMOD_Csound_Desc.name, "%s", csoundChannels[i].caption.c_str());
+	//			csoundChannels.erase(csoundChannels.begin() + i);
+	//			params = csoundChannels.size();
+	//		}
+	//	}
+
+	//	string test = "Hello there !";
+	//	FMOD_Csound_Desc.userdata = static_cast<void*>(&test);
+
+	//	params = csoundChannels.size();
+	//	FMOD_Csound_Desc.numparameters = params;
+
+	//	int paramCount = 0;
+	//	for (int i = 0; i < params; i++)
+	//	{
+	//			FMOD_Csound_dspparam[paramCount] = &csoundParameters[i];
+	//			paramCount++;
+	//			FMOD_DSP_INIT_PARAMDESC_FLOAT(csoundParameters[i], csoundChannels[i].channel.c_str(), "", csoundChannels[i].text.c_str(), csoundChannels[i].range[Range::MIN], csoundChannels[i].range[Range::MAX], csoundChannels[i].range[Range::VALUE]);
+	//	}
+
+	//	return &FMOD_Csound_Desc;
+	//}
 
 }
 
@@ -381,15 +479,7 @@ public:
 	MYFLT *csoundInput, *csoundOutput;
 	int16 sineWave[64];
 	int sampleIndex = 0;
-	int CompileCsound(string csdFile);
-
-	bool didCsoundCompileOk()
-	{
-		if (csoundReturnCode == 0)
-			return true;
-		else
-			return false;
-	}
+	void CompileCsound(string csdFile);
 
 private:
 	float m_target_level;
@@ -403,7 +493,7 @@ FMODCsound::FMODCsound()
 
 }
 
-int FMODCsound::CompileCsound(string csdFile)
+void FMODCsound::CompileCsound(string csdFile)
 {
 	csoundInitialize(CSOUNDINIT_NO_ATEXIT);
 
@@ -434,13 +524,11 @@ int FMODCsound::CompileCsound(string csdFile)
 		//UE_LOG(ModuleLog, Warning, TEXT("CsoundUnreal: Csd did not compile Ok"));
 	}
 
-	return csoundReturnCode;
-
 }
 
 void FMODCsound::generate(float *outbuffer, unsigned int length, int channels)
 {
-	if (didCsoundCompileOk())
+	if (csound)
 	{
 		unsigned int samples = length;
 		unsigned int position = 0;
@@ -469,9 +557,13 @@ void FMODCsound::generate(float *outbuffer, unsigned int length, int channels)
 FMOD_RESULT F_CALLBACK FMOD_Csound_dspcreate(FMOD_DSP_STATE *dsp_state)
 {
 	dsp_state->plugindata = (FMODCsound *)FMOD_DSP_STATE_MEMALLOC(dsp_state, sizeof(FMODCsound), FMOD_MEMORY_NORMAL, "FMODCsound");
+	void* userData;
+	FMOD_DSP *dsp = (FMOD_DSP *)dsp_state->instance;
+	FMOD_DSP_GetUserData(dsp, &userData);
+	CsoundInstrument* csdInstrument = (static_cast<CsoundInstrument*>(userData));
 
-	int result = ((FMODCsound *)dsp_state->plugindata)->CompileCsound(csdFilename);
-	if (!dsp_state->plugindata || result!=0)
+	((FMODCsound *)dsp_state->plugindata)->CompileCsound(csdInstrument->csdFilename);
+	if (!dsp_state->plugindata)
 	{
 		return FMOD_ERR_MEMORY;
 	}
@@ -534,11 +626,15 @@ FMOD_RESULT F_CALLBACK FMOD_Csound_dspreset(FMOD_DSP_STATE *dsp)
 FMOD_RESULT F_CALLBACK FMOD_Csound_dspsetparamfloat(FMOD_DSP_STATE *dsp_state, int index, float value)
 {
 	FMODCsound *state = (FMODCsound *)dsp_state->plugindata;
+	void* userData;
+	FMOD_DSP *dsp = (FMOD_DSP *)dsp_state->instance;
+	FMOD_DSP_GetUserData(dsp, &userData);
+	CsoundInstrument* csdInstrument = (static_cast<CsoundInstrument*>(userData));
 
-	if (index < csoundChannels.size())
+	if (index < csdInstrument->numberOfChannels)
 	{
-		string channelName = csoundChannels[index].name;
-		csoundSetControlChannel(state->csound, csoundChannels[index].name.c_str(), value);
+		string channelName = csdInstrument->channels[index].name;
+		csoundSetControlChannel(state->csound, csdInstrument->channels[index].name.c_str(), value);
 	}
 	//switch (index)
 	//{
@@ -583,11 +679,15 @@ FMOD_RESULT F_CALLBACK FMOD_Csound_dspsetparambool(FMOD_DSP_STATE *dsp, int inde
 FMOD_RESULT F_CALLBACK FMOD_Csound_dspsetparamint(FMOD_DSP_STATE *dsp_state, int index, int value)
 {
 	FMODCsound *state = (FMODCsound *)dsp_state->plugindata;
+	void* userData;
+	FMOD_DSP *dsp = (FMOD_DSP *)dsp_state->instance;
+	FMOD_DSP_GetUserData(dsp, &userData);
+	CsoundInstrument* csdInstrument = (static_cast<CsoundInstrument*>(userData));
 
-	if (index < csoundChannels.size())
+	if (index < csdInstrument->numberOfChannels)
 	{
-		string channelName = csoundChannels[index].name;
-		csoundSetControlChannel(state->csound, csoundChannels[index].name.c_str(), value);
+		string channelName = csdInstrument->channels[index].name;
+		csoundSetControlChannel(state->csound, csdInstrument->channels[index].name.c_str(), value);
 	}
 
 	return FMOD_OK;
