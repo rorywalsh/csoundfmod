@@ -42,18 +42,7 @@ asig fmbell iamp, chnget:i("frequency"), kc1, kc2, kvdepth, kvrate
      outs asig*a1, asig*a1
 endin
 
-instr 3
 
-kamp = p4
-kfreq = 880
-kc1 = p5
-kc2 = p6
-kvdepth = 0.005
-kvrate = 6
-
-asig fmbell kamp, kfreq, kc1, kc2, kvdepth, kvrate, 1, 1, 1, 1, 1, p7
-     outs asig, asig
-endin
 </CsInstruments>
 <CsScore>
 f 1 0 32768 10 1 
