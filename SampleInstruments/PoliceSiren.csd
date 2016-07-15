@@ -20,7 +20,7 @@ ksmps = 32
 nchnls = 2
 0dbfs = 1
 
-
+;RW, 2016
 
 instr 1
 k1 oscil 800, chnget:k("freq"), 1
