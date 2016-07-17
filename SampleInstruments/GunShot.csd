@@ -23,7 +23,7 @@ nchnls = 2
 seed 0
 
 ; GunShot.csd
-; Written by Rory Walsh, 2016
+; Written by Rory Walsh, 2016. 
 
 ; instrument 1 is always on. It waits for channel data to change
 ; and then acts accordingly. 
