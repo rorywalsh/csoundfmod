@@ -7,7 +7,7 @@ The second file, fmod_csound_multi_plug.cpp does not work, but may do in the fut
 
 ## Using CsoundFMOD without Cabbage. 
 
-CsoundFMOD is a single plugin library that when loaded by FMOD Studio reads the current directory for a Csound file of the same name. You mst set FMOD Studio to search in the correct folder for your plugins. In order to create new plugins, simply copy and rename the CsoundFMOD library (fmod_csoundL64.dll/fmod_csound.dylib) so that it shares the same name as the .csd file. For example, if you write an instrument called FunkyTown.csd. Copy the fmod_csound library and rename it to FunckyTown.dll, or FunkyTown.dylib. The next time FMOD is started it will load your plugin. 
+CsoundFMOD is a single plugin library that when loaded by FMOD Studio reads the current directory for a Csound file of the same name. You must set FMOD Studio to search in the correct folder for your plugins. Download the appropriate CsoundFMOD library for your platform under the Releases. Now simply copy and rename the CsoundFMOD library (fmod_csoundL64.dll/fmod_csound.dylib) so that it shares the same name as your Csound .csd file. For example, if you write an instrument called FunkyTown.csd. Copy the fmod_csound library and rename it to FunckyTown.dll, or FunkyTown.dylib. The next time FMOD is started it will load your plugin. 
 
 
 
