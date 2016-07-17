@@ -17,10 +17,14 @@ This example shows how to created a plugin effect.
 #include "fmod.hpp"
 #ifdef WIN32
 #include "windows.h"
+EXTERN_C IMAGE_DOS_HEADER __ImageBase;
+#else
+#include <dlfcn.h>
+#include <CoreFoundation/CoreFoundation.h>
 #endif
 #include <fstream>
 
-EXTERN_C IMAGE_DOS_HEADER __ImageBase;
+
 
 #define MAXPLUGINS 512
 using namespace std;
@@ -41,12 +45,10 @@ const float FMOD_CSOUND_PARAM_GAIN_DEFAULT = 0.0f;
 //===========================================================
 // simple class for holding information about Csound instruments and channels
 //===========================================================
-enum Range
-{
-	MIN = 0,
-	MAX,
-	VALUE
-};
+#define MIN 0
+#define MAX 1
+#define VALUE 2
+
 
 struct CsoundChannel
 {
@@ -128,20 +130,34 @@ FMOD_DSP_DESCRIPTION FMOD_Csound_Desc =
 //===========================================================
 // utility function to get name of library that was loaded
 //===========================================================
-string GetCsdFilename()
-{
-	char   DllPath[MAX_PATH] = { 0 };
 #ifdef WIN32
+const char* GetCsdFilename()
+{
+    string fileName;
+
+	char   DllPath[MAX_PATH] = { 0 };
 	GetModuleFileName((HINSTANCE)&__ImageBase, DllPath, _countof(DllPath));
-	string fileName = DllPath;
-	size_t lastindex = fileName.find_last_of(".");
-	string fullFilename = fileName.substr(0, lastindex);
-	fullFilename.append(".csd");
-	return fullFilename;
-#endif
+	filename = DllPath;
+    size_t lastindex = fileName.find_last_of(".");
+    string fullFilename = fileName.substr(0, lastindex);
+    fullFilename.append(".csd");
+    return fullFilename.c_str();
 
 }
-
+#else
+const char* GetCsdFilename(void)
+{
+    Dl_info info;
+    if (dladdr((void*)"GetCsdFilename", &info))
+    {
+        string fileName = info.dli_fname;
+        size_t lastindex = fileName.find_last_of(".");
+        string fullFilename = fileName.substr(0, lastindex);
+        fullFilename.append(".csd");
+        return fullFilename.c_str();
+    }
+}
+#endif
 string csdFilename;
 //to remove leading and trailing spaces
 string Trim(string s)
@@ -163,7 +179,7 @@ vector<string> GetCsdFiles()
 	int             i = 0;
 	size_t    indx = 0;
 	char csd_path[1024];
-	sprintf(csd_path, "%s", GetCsdFilename().c_str());
+	sprintf(csd_path, "%s", GetCsdFilename());
 	char *src = NULL;
 
 
@@ -220,12 +236,11 @@ static vector<CsoundChannel> GetCsoundChannelVector(string csdFile)
 {
 	vector<CsoundChannel> csndChannels;
 
-	std::ifstream input(csdFile);
+	std::ifstream input(csdFile.c_str());
 
 	std::string line;
 	while (std::getline(input, line))
 	{
-
 		if (line.find("</") != std::string::npos)
 			break;
 
@@ -247,9 +262,9 @@ static vector<CsoundChannel> GetCsoundChannelVector(string csdFile)
 			CsoundChannel csndChannel;
 			csndChannel.type = control;
 			//init range
-			csndChannel.range[Range::MIN] = 0;
-			csndChannel.range[Range::MAX] = 1;
-			csndChannel.range[Range::VALUE] = 0;
+			csndChannel.range[MIN] = 0;
+			csndChannel.range[MAX] = 1;
+			csndChannel.range[VALUE] = 0;
 
 			if (line.find("caption(") != std::string::npos)
 			{
@@ -280,7 +295,7 @@ static vector<CsoundChannel> GetCsoundChannelVector(string csdFile)
 				int argCount = 0;
 				while (p)
 				{
-					csndChannel.range[argCount] = stof(p);
+					csndChannel.range[argCount] = atof(p);
 					argCount++;
 					//not handling increment of log sliders yet
 					if (argCount == 3)
@@ -293,8 +308,9 @@ static vector<CsoundChannel> GetCsoundChannelVector(string csdFile)
 			{
 				string value = line.substr(line.find("value(") + 6);
 				value = value.substr(0, value.find(")"));
-				csndChannel.range[Range::VALUE] = value.length() > 0 ? stof(value) : 0;
+				csndChannel.range[VALUE] = value.length() > 0 ? atof(value.c_str()) : 0;
 			}
+
 
 			csndChannels.push_back(csndChannel);
 		}
@@ -309,6 +325,14 @@ extern "C"
 	F_EXPORT FMOD_DSP_DESCRIPTION* F_CALL FMODGetDSPDescription()
 	{
 		csdFilename = GetCsdFilename();
+//        char filestring[1000];
+//        sprintf(filestring, "%s", csdFilename.c_str());
+//        CFStringRef ref = CFStringCreateWithCString(NULL, filestring, kCFStringEncodingUTF8);
+//        CFUserNotificationDisplayNotice(0, kCFUserNotificationPlainAlertLevel,
+//                                        NULL, NULL, NULL, CFSTR("Result"),
+//                                        ref, CFSTR("OK"));
+        
+        
 		csoundChannels = GetCsoundChannelVector(csdFilename);
 		int params = csoundChannels.size();
 
@@ -341,7 +365,7 @@ extern "C"
 						csoundChannels[i].text.c_str(),
 						0,
 						1,
-						csoundChannels[i].range[Range::VALUE],
+						csoundChannels[i].range[VALUE],
 						0,
 						0);
 				}
@@ -352,13 +376,13 @@ extern "C"
 						csoundChannels[i].name.c_str(),
 						"",
 						csoundChannels[i].text.c_str(),
-						csoundChannels[i].range[Range::MIN],
-						csoundChannels[i].range[Range::MAX],
-						csoundChannels[i].range[Range::VALUE]);
+						csoundChannels[i].range[MIN],
+						csoundChannels[i].range[MAX],
+						csoundChannels[i].range[VALUE]);
 				}
 				//FMOD_DSP_INIT_PARAMDESC_FLOAT(csoundParameters[i], csoundChannels[i].name.c_str(), "", csoundChannels[i].text.c_str(), csoundChannels[i].range[Range::MIN], csoundChannels[i].range[Range::MAX], csoundChannels[i].range[Range::VALUE]);
 		}
-
+       
 		return &FMOD_Csound_Desc;
 	}
 
@@ -455,7 +479,7 @@ void FMODCsound::generate(float *outbuffer, unsigned int length, int channels)
 			for (int chans = 0; chans < channels; chans++)
 			{
 				position = ksmpsIndex*channels;
-				*outbuffer++ = csoundOutput[chans + position];
+                *outbuffer++ = csoundOutput[chans + position];
 			}
 
 			ksmpsIndex++;
