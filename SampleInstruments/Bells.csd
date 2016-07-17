@@ -2,7 +2,7 @@
 form caption("Bells") size(430, 300), colour(58, 110, 182), pluginID("def1")
 rslider bounds(8, 56, 100, 100), channel("modIndex"), range(0, 2, .3, 1, .01), text("Mod Index"), trackercolour("lime"), outlinecolour(0, 0, 0, 50), textcolour("black")
 
-checkbox bounds(8, 16, 60, 25), channel("but1"), text("Push", "Push")
+checkbox bounds(8, 16, 60, 25), channel("trigger"), text("Push", "Push")
 rslider bounds(112, 56, 100, 100), channel("crossFade"), range(0, 5, .3, 1, .01), text("Cross Fade"), trackercolour("lime"), outlinecolour(0, 0, 0, 50), textcolour("black")
 
 rslider bounds(216, 56, 100, 100), channel("speed"), range(.01, 25, 10, 1, .01), text("Alarm Speed"), trackercolour("lime"), outlinecolour(0, 0, 0, 50), textcolour("black")
@@ -20,11 +20,12 @@ ksmps = 32
 nchnls = 2
 0dbfs = 1
 
-;RW 2016
+; Written by Rory Walsh, 2015
+
 
 instr 1
 kPartials = 0
-if chnget:k("but1")==1 then
+if chnget:k("trigger")==1 then
 	if metro(chnget:k("speed"))==1 then
 		event "i", 2, 0, chnget:k("duration"), chnget:k("modIndex"), chnget:k("crossFade")
 	endif

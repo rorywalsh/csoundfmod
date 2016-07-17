@@ -20,9 +20,9 @@ sr = 44100
 ksmps = 32
 nchnls = 2
 0dbfs = 1
-;RW, 2016
-
 seed 0
+
+; Written by Rory Walsh, 2016. 
 
 instr 1
 kGain chnget "gain"
@@ -56,9 +56,6 @@ endin
 
 </CsInstruments>
 <CsScore>
-;causes Csound to run for about 7000 years...
-f0 z
-;starts instrument 1 and runs it for a week
 i1 0 [60*60*24*7] 
 </CsScore>
 </CsoundSynthesizer>

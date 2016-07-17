@@ -29,7 +29,7 @@ seed 0
 ; and then acts accordingly. 
 instr 1
 	kTrigger chnget "oneshot"
-	if changed(kTrigger)==1 then
+	if changed(kTrigger)==1 && kTrigger==1 then
 		event "i", "FIRE_GUN", 0, 10
 	endif
 

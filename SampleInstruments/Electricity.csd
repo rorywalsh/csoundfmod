@@ -12,7 +12,7 @@ rslider bounds(162, 72, 68, 67), channel("idtTime2"), range(0.00001, 0.005, 0.00
 <CsInstruments>
 sr = 44100
 ksmps = 32
-nchnls = 1
+nchnls = 2
 0dbfs = 1
 seed 0
 ; Electricity.csd
@@ -37,10 +37,11 @@ endop
 ; instrument 1, when it changes to 0 it will stop it.
 instr TRIGGER_INSTRUMENT
 	kTrigger chnget "trigger"
+	kTrigger = int(kTrigger)
 	if changed(kTrigger)==1 then
 		if kTrigger==1 then
 			event "i", 1, 0, 1000
-		else
+		else 
 			turnoff2 1, 0, 1
 		endif
 	endif	
