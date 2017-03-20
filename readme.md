@@ -11,7 +11,7 @@ CsoundFMOD is a single plugin library that when loaded by FMOD Studio reads the 
 
 
 
-## CsoundFMOD is copyright (c) 2016 Rory Walsh.
+### CsoundFMOD is copyright (c) 2016 Rory Walsh.
 
 CsoundFMOD is free software; you can redistribute them and/or modify them under the terms of the GNU Lesser General Public License as published by the Free Software Foundation; either version 2.1 of the License, or (at your option) any later version.
 
