@@ -1,18 +1,18 @@
 /*
-  Copyright (C) 2016 Rory Walsh
-  
-  Cabbage is free software; you can redistribute it
-  and/or modify it under the terms of the GNU Lesser General Public
-  License as published by the Free Software Foundation; either
-  version 2.1 of the License, or (at your option) any later version.
-  This software is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU Lesser General Public License for more details.
-  You should have received a copy of the GNU Lesser General Public
-  License along with Csound; if not, write to the Free Software
-  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
-  02111-1307 USA
+Copyright (C) 2016 Rory Walsh
+
+CsoundFMOD is free software; you can redistribute it
+and/or modify it under the terms of the GNU Lesser General Public
+License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version.
+This software is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Lesser General Public License for more details.
+You should have received a copy of the GNU Lesser General Public
+License along with Csound; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
+02111-1307 USA
 */
 #define _CRT_SECURE_NO_WARNINGS
 
@@ -41,7 +41,6 @@ using namespace std;
 
 extern "C" {
 	F_EXPORT FMOD_DSP_DESCRIPTION* F_CALL FMODGetDSPDescription();
-	//F_EXPORT FMOD_PLUGINLIST* F_CALL FMODGetPluginDescriptionList();
 }
 
 const float FMOD_CSOUND_PARAM_GAIN_MIN = -80.0f;
@@ -91,14 +90,18 @@ FMOD_RESULT F_CALLBACK FMOD_Csound_dspgetparamint(FMOD_DSP_STATE *dsp, int index
 FMOD_RESULT F_CALLBACK FMOD_Csound_dspgetparambool(FMOD_DSP_STATE *dsp, int index, bool *value, char *valuestr);
 FMOD_RESULT F_CALLBACK FMOD_Csound_dspgetparamdata(FMOD_DSP_STATE *dsp, int index, void **value, unsigned int *length, char *valuestr);
 
-//each plugin can use 100 parameters, with support for 1000 plugins
-static FMOD_DSP_PARAMETER_DESC csoundParameters[10000];
+//each plugin can use 1000 parameters
+#define MAX_PARAMETERS 1000
 
-
-#define MAX_PARAMETERS 10000
-
+static FMOD_DSP_PARAMETER_DESC csoundParameters[MAX_PARAMETERS];
+string csdFilename;
 FMOD_DSP_PARAMETER_DESC *FMOD_Csound_dspparam[MAX_PARAMETERS] = {};
+bool debugMode = false;
 
+//===========================================================
+// generic descriptor for plguins. Members are updated once 
+// the .csd file has been read. 
+//===========================================================
 FMOD_DSP_DESCRIPTION FMOD_Csound_Desc =
 {
 	FMOD_PLUGIN_SDK_VERSION,        /* [w] The plugin SDK version this plugin is built for.  set to this to FMOD_PLUGIN_SDK_VERSION defined above. */
@@ -132,43 +135,41 @@ FMOD_DSP_DESCRIPTION FMOD_Csound_Desc =
 };
 
 
-
-
-
-
 //===========================================================
 // utility function to get name of library that was loaded
 //===========================================================
 #ifdef WIN32
-const char* GetCsdFilename()
+string GetCsdFilename()
 {
-    string fileName;
-
 	char   DllPath[MAX_PATH] = { 0 };
+#ifdef WIN32
 	GetModuleFileName((HINSTANCE)&__ImageBase, DllPath, _countof(DllPath));
-	filename = DllPath;
-    size_t lastindex = fileName.find_last_of(".");
-    string fullFilename = fileName.substr(0, lastindex);
-    fullFilename.append(".csd");
-    return fullFilename.c_str();
+	string fileName = DllPath;
+	size_t lastindex = fileName.find_last_of(".");
+	string fullFilename = fileName.substr(0, lastindex);
+	fullFilename.append(".csd");
+	return fullFilename;
+#endif
 
 }
 #else
 const char* GetCsdFilename(void)
 {
-    Dl_info info;
-    if (dladdr((void*)"GetCsdFilename", &info))
-    {
-        string fileName = info.dli_fname;
-        size_t lastindex = fileName.find_last_of(".");
-        string fullFilename = fileName.substr(0, lastindex);
-        fullFilename.append(".csd");
-        return fullFilename.c_str();
-    }
+	Dl_info info;
+	if (dladdr((void*)"GetCsdFilename", &info))
+	{
+		string fileName = info.dli_fname;
+		size_t lastindex = fileName.find_last_of(".");
+		string fullFilename = fileName.substr(0, lastindex);
+		fullFilename.append(".csd");
+		return fullFilename.c_str();
+	}
 }
 #endif
-string csdFilename;
-//to remove leading and trailing spaces
+
+//===========================================================
+// to remove leading and trailing spaces from strings....
+//===========================================================
 string Trim(string s)
 {
 	//trim spaces at start
@@ -178,7 +179,10 @@ string Trim(string s)
 	return s;
 }
 
-// count CSDs in the current directory
+//===========================================================
+// get csd file. This file must reside in the same directory
+// as the plugin library
+//===========================================================
 vector<string> GetCsdFiles()
 {
 	vector<string> csdnames;
@@ -191,9 +195,6 @@ vector<string> GetCsdFiles()
 	sprintf(csd_path, "%s", GetCsdFilename());
 	char *src = NULL;
 
-
-	// if no LADSPA_PATH attempt to open
-	// current directory
 	if (strlen(csd_path) == 0) dip = opendir(".");
 	else {
 		path = csd_path;
@@ -208,7 +209,7 @@ vector<string> GetCsdFiles()
 			csd_path[1023] = '\0';
 		}
 		else dip = opendir(csd_path);
-}
+	}
 	if (dip == NULL) {
 		free(src);
 		return csdnames;
@@ -238,9 +239,9 @@ vector<string> GetCsdFiles()
 }
 
 //================================================================
-// simple function for loading information to CsoundChannel vector
+// simple function for loading information about controls 
+// and Csound channels to vector
 //================================================================
-
 static vector<CsoundChannel> GetCsoundChannelVector(string csdFile)
 {
 	vector<CsoundChannel> csndChannels;
@@ -260,8 +261,6 @@ static vector<CsoundChannel> GetCsoundChannelVector(string csdFile)
 		if (i != std::string::npos)
 			newLine.erase(i, control.length());
 
-
-
 		if (control.find("slider") != std::string::npos ||
 			control.find("button") != std::string::npos ||
 			control.find("checkbox") != std::string::npos ||
@@ -274,6 +273,11 @@ static vector<CsoundChannel> GetCsoundChannelVector(string csdFile)
 			csndChannel.range[MIN] = 0;
 			csndChannel.range[MAX] = 1;
 			csndChannel.range[VALUE] = 0;
+
+			if (line.find("debug") != std::string::npos)
+			{
+				debugMode = true;
+			}
 
 			if (line.find("caption(") != std::string::npos)
 			{
@@ -306,7 +310,7 @@ static vector<CsoundChannel> GetCsoundChannelVector(string csdFile)
 				{
 					csndChannel.range[argCount] = atof(p);
 					argCount++;
-					//not handling increment of log sliders yet
+					//not handling increment or log sliders yet
 					if (argCount == 3)
 						break;
 					p = strtok(NULL, ",");
@@ -319,8 +323,6 @@ static vector<CsoundChannel> GetCsoundChannelVector(string csdFile)
 				value = value.substr(0, value.find(")"));
 				csndChannel.range[VALUE] = value.length() > 0 ? atof(value.c_str()) : 0;
 			}
-
-
 			csndChannels.push_back(csndChannel);
 		}
 	}
@@ -331,29 +333,30 @@ static vector<CsoundChannel> GetCsoundChannelVector(string csdFile)
 
 extern "C"
 {
+	//================================================================
+	// this function is called when FMOD loads first
+	//================================================================
 	F_EXPORT FMOD_DSP_DESCRIPTION* F_CALL FMODGetDSPDescription()
 	{
 		csdFilename = GetCsdFilename();
-//        char filestring[1000];
-//        sprintf(filestring, "%s", csdFilename.c_str());
-//        CFStringRef ref = CFStringCreateWithCString(NULL, filestring, kCFStringEncodingUTF8);
-//        CFUserNotificationDisplayNotice(0, kCFUserNotificationPlainAlertLevel,
-//                                        NULL, NULL, NULL, CFSTR("Result"),
-//                                        ref, CFSTR("OK"));
-        
-        
+		//        char filestring[1000];
+		//        sprintf(filestring, "%s", csdFilename.c_str());
+		//        CFStringRef ref = CFStringCreateWithCString(NULL, filestring, kCFStringEncodingUTF8);
+		//        CFUserNotificationDisplayNotice(0, kCFUserNotificationPlainAlertLevel,
+		//                                        NULL, NULL, NULL, CFSTR("Result"),
+		//                                        ref, CFSTR("OK"));
+
+
 		csoundChannels = GetCsoundChannelVector(csdFilename);
 		int params = csoundChannels.size();
-
-
 		CsoundChannel csndChannel;
-	
-		//find name of plugin and then remove from parameter list...
+
 		for (int i = 0; i < params; i++)
 		{
 			if (csoundChannels[i].type == "form")
 			{
 				sprintf(FMOD_Csound_Desc.name, "%s", csoundChannels[i].caption.c_str());
+				//remove form from control array as it does not control anything...
 				csoundChannels.erase(csoundChannels.begin() + i);
 				params = csoundChannels.size();
 			}
@@ -361,43 +364,47 @@ extern "C"
 
 		params = csoundChannels.size();
 		FMOD_Csound_Desc.numparameters = params;
-		
+
 		for (int i = 0; i < params; i++)
 		{
-				FMOD_Csound_dspparam[i] = &csoundParameters[i];
-				if (csoundChannels[i].type == "button" || csoundChannels[i].type == "checkbox")
-				{
-					FMOD_DSP_INIT_PARAMDESC_INT(
-						csoundParameters[i],
-						csoundChannels[i].name.c_str(),
-						"",
-						csoundChannels[i].text.c_str(),
-						0,
-						1,
-						csoundChannels[i].range[VALUE],
-						0,
-						0);
-				}
-				else
-				{
-					FMOD_DSP_INIT_PARAMDESC_FLOAT(
-						csoundParameters[i],
-						csoundChannels[i].name.c_str(),
-						"",
-						csoundChannels[i].text.c_str(),
-						csoundChannels[i].range[MIN],
-						csoundChannels[i].range[MAX],
-						csoundChannels[i].range[VALUE]);
-				}
-				//FMOD_DSP_INIT_PARAMDESC_FLOAT(csoundParameters[i], csoundChannels[i].name.c_str(), "", csoundChannels[i].text.c_str(), csoundChannels[i].range[Range::MIN], csoundChannels[i].range[Range::MAX], csoundChannels[i].range[Range::VALUE]);
+			FMOD_Csound_dspparam[i] = &csoundParameters[i];
+			// FMOD only allows automation of float parameters?!
+
+			//if (csoundChannels[i].type == "button" || csoundChannels[i].type == "checkbox")
+			//{
+			//	FMOD_DSP_INIT_PARAMDESC_INT(
+			//		csoundParameters[i],
+			//		csoundChannels[i].name.c_str(),
+			//		"",
+			//		csoundChannels[i].text.c_str(),
+			//		0,
+			//		1,
+			//		csoundChannels[i].range[VALUE],
+			//		0,
+			//		0);
+			//}
+			//else
+			{
+				FMOD_DSP_INIT_PARAMDESC_FLOAT(
+					csoundParameters[i],
+					csoundChannels[i].name.c_str(),
+					"",
+					csoundChannels[i].text.c_str(),
+					csoundChannels[i].range[MIN],
+					csoundChannels[i].range[MAX],
+					csoundChannels[i].range[VALUE]);
+			}
+			//FMOD_DSP_INIT_PARAMDESC_FLOAT(csoundParameters[i], csoundChannels[i].name.c_str(), "", csoundChannels[i].text.c_str(), csoundChannels[i].range[Range::MIN], csoundChannels[i].range[Range::MAX], csoundChannels[i].range[Range::VALUE]);
 		}
-       
+
 		return &FMOD_Csound_Desc;
 	}
 
 }
 
-//================================================================================================================
+//========================================================================
+// Simple Csound class that handles compiling of Csound and generating audio
+//========================================================================
 class FMODCsound
 {
 public:
@@ -406,17 +413,16 @@ public:
 	void generate(float *outbuffer, unsigned int length, int channels);
 	void setFormat(FMOD_CSOUND_FORMAT format) { m_format = format; }
 	FMOD_CSOUND_FORMAT format() const { return m_format; }
-
 	CSOUND* csound;
 	int csoundReturnCode;
 	int ksmpsIndex, ksmps;
 	MYFLT cs_scale;
 	MYFLT *csoundInput, *csoundOutput;
-	int16 sineWave[64];
+
 	int sampleIndex = 0;
 	int CompileCsound(string csdFile);
 
-	bool didCsoundCompileOk()
+	bool csoundCompileOk()
 	{
 		if (csoundReturnCode == 0)
 			return true;
@@ -449,13 +455,12 @@ int FMODCsound::CompileCsound(string csdFile)
 	char fileName[1024];
 	sprintf(fileName, "%s", csdFile.c_str());
 	args[1] = fileName;
-	//strcpy(args[1], csdFile.c_str());
 
-	csoundReturnCode = csoundCompile(csound, 2, args);
+
+	csoundReturnCode = csoundCompile(csound, 2, (const char **)args);
 
 	if (csoundReturnCode == 0)
 	{
-		//UE_LOG(ModuleLog, Warning, TEXT("CsoundUnreal: Csd compiled Ok"));
 		ksmps = csoundGetKsmps(csound);
 		csoundPerformKsmps(csound);
 		cs_scale = csoundGet0dBFS(csound);
@@ -464,7 +469,8 @@ int FMODCsound::CompileCsound(string csdFile)
 	}
 	else
 	{
-		//UE_LOG(ModuleLog, Warning, TEXT("CsoundUnreal: Csd did not compile Ok"));
+		// fmod doesn't allow logging but if it does in the future, this should print information to the user
+		// about possible problems in their instruments
 	}
 
 	return csoundReturnCode;
@@ -473,7 +479,7 @@ int FMODCsound::CompileCsound(string csdFile)
 
 void FMODCsound::generate(float *outbuffer, unsigned int length, int channels)
 {
-	if (didCsoundCompileOk())
+	if (csoundCompileOk())
 	{
 		unsigned int samples = length;
 		unsigned int position = 0;
@@ -488,23 +494,21 @@ void FMODCsound::generate(float *outbuffer, unsigned int length, int channels)
 			for (int chans = 0; chans < channels; chans++)
 			{
 				position = ksmpsIndex*channels;
-                *outbuffer++ = csoundOutput[chans + position];
+				*outbuffer++ = csoundOutput[chans + position];
 			}
 
 			ksmpsIndex++;
-
 		}
 
 	}
-
 }
 
 FMOD_RESULT F_CALLBACK FMOD_Csound_dspcreate(FMOD_DSP_STATE *dsp_state)
 {
-	dsp_state->plugindata = (FMODCsound *)FMOD_DSP_STATE_MEMALLOC(dsp_state, sizeof(FMODCsound), FMOD_MEMORY_NORMAL, "FMODCsound");
+	dsp_state->plugindata = (FMODCsound *)FMOD_DSP_ALLOC(dsp_state, sizeof(FMODCsound));
 
 	int result = ((FMODCsound *)dsp_state->plugindata)->CompileCsound(csdFilename);
-	if (!dsp_state->plugindata || result!=0)
+	if (!dsp_state->plugindata || result != 0)
 	{
 		return FMOD_ERR_MEMORY;
 	}
@@ -514,7 +518,7 @@ FMOD_RESULT F_CALLBACK FMOD_Csound_dspcreate(FMOD_DSP_STATE *dsp_state)
 FMOD_RESULT F_CALLBACK FMOD_Csound_dsprelease(FMOD_DSP_STATE *dsp)
 {
 	FMODCsound *state = (FMODCsound *)dsp->plugindata;
-	FMOD_DSP_STATE_MEMFREE(dsp, state, FMOD_MEMORY_NORMAL, "FMODCsound");
+	FMOD_DSP_FREE(dsp, state);
 	return FMOD_OK;
 }
 
@@ -527,6 +531,7 @@ FMOD_RESULT F_CALLBACK FMOD_Csound_dspprocess(FMOD_DSP_STATE *dsp, unsigned int 
 		FMOD_SPEAKERMODE outmode = FMOD_SPEAKERMODE_DEFAULT;
 		int outchannels = 0;
 
+		// fixed at stereo for now....
 		switch (FMOD_CSOUND_FORMAT_STEREO)
 		{
 		case FMOD_CSOUND_FORMAT_MONO:
@@ -554,13 +559,19 @@ FMOD_RESULT F_CALLBACK FMOD_Csound_dspprocess(FMOD_DSP_STATE *dsp, unsigned int 
 		return FMOD_OK;
 	}
 
-	state->generate(outbufferarray->buffers[0], length, outbufferarray->buffernumchannels[0]);
-	return FMOD_OK;
-}
+	if (debugMode == true)
+	{
+		const int messageCnt = csoundGetMessageCnt(state->csound);
 
-FMOD_RESULT F_CALLBACK FMOD_Csound_dspreset(FMOD_DSP_STATE *dsp)
-{
-	FMODCsound *state = (FMODCsound *)dsp->plugindata;
+		for (int i = 0; i < messageCnt; i++)
+		{
+
+			FMOD_DSP_LOG(dsp, FMOD_DEBUG_LEVEL_WARNING, "", csoundGetFirstMessage(state->csound));
+			csoundPopFirstMessage(state->csound);
+		}
+	}
+
+	state->generate(outbufferarray->buffers[0], length, outbufferarray->buffernumchannels[0]);
 	return FMOD_OK;
 }
 
@@ -572,72 +583,48 @@ FMOD_RESULT F_CALLBACK FMOD_Csound_dspsetparamfloat(FMOD_DSP_STATE *dsp_state, i
 	{
 		string channelName = csoundChannels[index].name;
 		csoundSetControlChannel(state->csound, csoundChannels[index].name.c_str(), value);
+		return FMOD_OK;
 	}
-	//switch (index)
-	//{
-	//case FMOD_CSOUND_PARAM_LEVEL:
-	//	state->setLevel(value);
-	//	return FMOD_OK;
-	//}
 
-	//return FMOD_ERR_INVALID_PARAM;
+	return FMOD_ERR_INVALID_PARAM;
+
+}
+
+
+FMOD_RESULT F_CALLBACK FMOD_Csound_dspsetparamint(FMOD_DSP_STATE *dsp_state, int index, int value)
+{
+	FMODCsound *state = (FMODCsound *)dsp_state->plugindata;
+	// this function, and the setbool one are not being used becase fmod doesn't allow automation of anything 
+	// other than float parameters...
+	if (index < csoundChannels.size())
+	{
+		string channelName = csoundChannels[index].name;
+		csoundSetControlChannel(state->csound, csoundChannels[index].name.c_str(), value);
+		return FMOD_OK;
+	}
+
+	return FMOD_ERR_INVALID_PARAM;
+}
+
+
+FMOD_RESULT F_CALLBACK FMOD_Csound_dspreset(FMOD_DSP_STATE *dsp)
+{
 	return FMOD_OK;
 }
 
+
 FMOD_RESULT F_CALLBACK FMOD_Csound_dspgetparamfloat(FMOD_DSP_STATE *dsp, int index, float *value, char *valuestr)
 {
-	FMODCsound *state = (FMODCsound *)dsp->plugindata;
-
-	//switch (index)
-	//{
-	//case FMOD_CSOUND_PARAM_LEVEL:
-	//	*value = state->level();
-	//	if (valuestr) sprintf(valuestr, "%.1f dB", state->level());
-	//	return FMOD_OK;
-	//}
-
-	//return FMOD_ERR_INVALID_PARAM;
 	return FMOD_OK;
 }
 
 FMOD_RESULT F_CALLBACK FMOD_Csound_dspsetparambool(FMOD_DSP_STATE *dsp, int index, FMOD_BOOL value)
 {
-	FMODCsound *state = (FMODCsound *)dsp->plugindata;
-
-	//if (index < csoundChannels.size())
-	//{
-	//	CsoundChannel chan = csoundChannels[index];
-	//	csoundSetControlChannel(state->csound, csoundChannels[index].channel.c_str(), value);
-	//}
-
 	return FMOD_OK;
 }
 
-FMOD_RESULT F_CALLBACK FMOD_Csound_dspsetparamint(FMOD_DSP_STATE *dsp_state, int index, int value)
-{
-	FMODCsound *state = (FMODCsound *)dsp_state->plugindata;
-
-	if (index < csoundChannels.size())
-	{
-		string channelName = csoundChannels[index].name;
-		csoundSetControlChannel(state->csound, csoundChannels[index].name.c_str(), value);
-	}
-
-	return FMOD_OK;
-}
 
 FMOD_RESULT F_CALLBACK FMOD_Csound_dspgetparamint(FMOD_DSP_STATE *dsp, int index, int *value, char *valuestr)
 {
-	FMODCsound *state = (FMODCsound *)dsp->plugindata;
-
-	//switch (index)
-	//{
-	//case FMOD_CSOUND_PARAM_FORMAT:
-	//	*value = state->format();
-	//	if (valuestr) sprintf(valuestr, FMOD_Csound_Format_Names[state->format()]);
-	//	return FMOD_OK;
-	//}
-
-	//return FMOD_ERR_INVALID_PARAM;
 	return FMOD_OK;
 }
