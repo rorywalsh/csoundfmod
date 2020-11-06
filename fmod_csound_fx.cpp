@@ -105,7 +105,7 @@ FMOD_DSP_DESCRIPTION FMOD_Csound_Desc =
 	FMOD_PLUGIN_SDK_VERSION,        /* [w] The plugin SDK version this plugin is built for.  set to this to FMOD_PLUGIN_SDK_VERSION defined above. */
 	"FMOD Csound",                  /* [w] The identifier of the DSP. This will also be used as the name of DSP and shouldn't change between versions. */
 	0x00010000,                     /* [w] Plugin writer's version number. */
-	0,                              /* [w] Number of input buffers to process.  Use 0 for DSPs that only generate sound and 1 for effects that process incoming sound. */
+	1,                              /* [w] Number of input buffers to process.  Use 0 for DSPs that only generate sound and 1 for effects that process incoming sound. */
 	1,                              /* [w] Number of audio output buffers.  Only one output buffer is currently supported. */
 	FMOD_Csound_dspcreate,          /* [w] Create callback.  This is called when DSP unit is created.  Can be null. */
 	FMOD_Csound_dsprelease,         /* [w] Release callback.  This is called just before the unit is freed so the user can do any cleanup needed for the unit.  Can be null. */
@@ -493,6 +493,7 @@ void FMODCsound::generate(float *outbuffer, float *inbuffer, unsigned int length
 			for (int chans = 0; chans < channels; chans++)
 			{
 				position = ksmpsIndex*channels;
+                csoundInput[chans + position] = *inbuffer++;
 				*outbuffer++ = csoundOutput[chans + position];
 			}
 
